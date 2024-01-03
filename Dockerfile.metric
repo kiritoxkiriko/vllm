@@ -1,0 +1,11 @@
+ARG VERSION=v0.2.6
+
+FROM vllm/vllm-openai:${VERSION}
+
+ENV PIP_INDEX_URL=https://mirrors.sustech.edu.cn/pypi/web/simple
+
+RUN pip install --no-cache-dir prometheus_fastapi_instrumentator
+
+COPY ./vllm/entrypoints/openai/api_server.py /workspace/vllm/entrypoints/openai/api_server.py
+
+ENV ENABLE_METRICS=1
