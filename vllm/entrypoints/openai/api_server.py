@@ -43,6 +43,32 @@ engine = None
 response_role = None
 
 
+# body logger
+def body_logger(request, raw_request: Request, start_time: float, resp=None):
+    request_body = request.model_dump_json()
+    process_time = time.time() - start_time
+    request_id = raw_request.headers.get('X-NADP-RequestID')
+    logger.info(
+        f'receive request: id: {request_id}, body: {request_body}, resp: {resp}, time: {process_time}')
+
+
+## add metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    excluded_handlers=[".*admin.*", "/metrics"],
+).instrument(app)
+
+
+@app.on_event("startup")
+async def _startup():
+    # set ENABLE_METRICS to True to enable metrics
+    instrumentator.expose(app)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server.")
@@ -67,19 +93,19 @@ def parse_args():
                         type=str,
                         default=None,
                         help="The model name used in the API. If not "
-                        "specified, the model name will be the same as "
-                        "the huggingface name.")
+                             "specified, the model name will be the same as "
+                             "the huggingface name.")
     parser.add_argument("--chat-template",
                         type=str,
                         default=None,
                         help="The file path to the chat template, "
-                        "or the template in single-line form "
-                        "for the specified model")
+                             "or the template in single-line form "
+                             "for the specified model")
     parser.add_argument("--response-role",
                         type=str,
                         default="assistant",
                         help="The role name to return if "
-                        "`request.add_generation_prompt=true`.")
+                             "`request.add_generation_prompt=true`.")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     return parser.parse_args()
@@ -131,9 +157,9 @@ async def check_model(request) -> Optional[JSONResponse]:
 
 
 async def check_length(
-    request: Union[ChatCompletionRequest, CompletionRequest],
-    prompt: Optional[str] = None,
-    prompt_ids: Optional[List[int]] = None
+        request: Union[ChatCompletionRequest, CompletionRequest],
+        prompt: Optional[str] = None,
+        prompt_ids: Optional[List[int]] = None
 ) -> Tuple[List[int], Optional[JSONResponse]]:
     assert (not (prompt is None and prompt_ids is None)
             and not (prompt is not None and prompt_ids is not None)
@@ -175,10 +201,10 @@ async def show_available_models():
 
 
 def create_logprobs(
-    token_ids: List[int],
-    top_logprobs: Optional[List[Optional[Dict[int, float]]]] = None,
-    num_output_top_logprobs: Optional[int] = None,
-    initial_text_offset: int = 0,
+        token_ids: List[int],
+        top_logprobs: Optional[List[Optional[Dict[int, float]]]] = None,
+        num_output_top_logprobs: Optional[int] = None,
+        initial_text_offset: int = 0,
 ) -> LogProbs:
     """Create OpenAI-style logprobs."""
     logprobs = LogProbs()
@@ -203,9 +229,9 @@ def create_logprobs(
 
         if num_output_top_logprobs:
             logprobs.top_logprobs.append({
-                tokenizer.convert_ids_to_tokens(i): p
-                for i, p in step_top_logprobs.items()
-            } if step_top_logprobs else None)
+                                             tokenizer.convert_ids_to_tokens(i): p
+                                             for i, p in step_top_logprobs.items()
+                                         } if step_top_logprobs else None)
     return logprobs
 
 
@@ -224,6 +250,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
     error_check_ret = await check_model(request)
     if error_check_ret is not None:
         return error_check_ret
+
+    s_time = time.time()
 
     if request.logit_bias is not None and len(request.logit_bias) > 0:
         # TODO: support logit_bias in vLLM engine.
@@ -298,8 +326,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
             last_msg_content = ""
             if request.messages and isinstance(
                     request.messages, list) and request.messages[-1].get(
-                        "content") and request.messages[-1].get(
-                            "role") == role:
+                "content") and request.messages[-1].get(
+                "role") == role:
                 last_msg_content = request.messages[-1]["content"]
             if last_msg_content:
                 for i in range(request.n):
@@ -396,8 +424,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
             last_msg_content = ""
             if request.messages and isinstance(
                     request.messages, list) and request.messages[-1].get(
-                        "content") and request.messages[-1].get(
-                            "role") == role:
+                "content") and request.messages[-1].get(
+                "role") == role:
                 last_msg_content = request.messages[-1]["content"]
 
             for choice in choices:
@@ -423,11 +451,16 @@ async def create_chat_completion(request: ChatCompletionRequest,
         return response
 
     # Streaming response
+    resp = None
     if request.stream:
-        return StreamingResponse(completion_stream_generator(),
+        resp = StreamingResponse(completion_stream_generator(),
                                  media_type="text/event-stream")
     else:
-        return await completion_full_generator()
+        resp = await completion_full_generator()
+
+    # body logger
+    body_logger(request, raw_request, s_time, resp=resp)
+    return resp
 
 
 @app.post("/v1/completions")
@@ -533,11 +566,11 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
               and not request.use_beam_search)
 
     def create_stream_response_json(
-        index: int,
-        text: str,
-        logprobs: Optional[LogProbs] = None,
-        finish_reason: Optional[str] = None,
-        usage: Optional[UsageInfo] = None,
+            index: int,
+            text: str,
+            logprobs: Optional[LogProbs] = None,
+            finish_reason: Optional[str] = None,
+            usage: Optional[UsageInfo] = None,
     ) -> str:
         choice_data = CompletionResponseStreamChoice(
             index=index,
