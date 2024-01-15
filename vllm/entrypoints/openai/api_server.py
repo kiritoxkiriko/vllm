@@ -45,7 +45,7 @@ response_role = None
 
 # body logger
 def body_logger(request, raw_request: Request, start_time: float, resp=None):
-    request_body = request.model_dump_json()
+    request_body = request.json(ensure_ascii=False)
     process_time = time.time() - start_time
     request_id = raw_request.headers.get('X-NADP-RequestID')
     logger.info(
