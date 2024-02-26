@@ -34,7 +34,6 @@ logger = init_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-
     async def _force_log():
         while True:
             await asyncio.sleep(10)
@@ -61,6 +60,8 @@ class LoRAParserAction(argparse.Action):
 
 # body logger
 import time
+
+
 def body_logger(request, raw_request: Request, start_time: float, resp=None):
     request_body = request.json(ensure_ascii=False)
     process_time = time.time() - start_time
@@ -76,14 +77,14 @@ instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
     should_respect_env_var=True,
-    excluded_handlers=[".*admin.*", "/metrics"],
+    excluded_handlers=[".*admin.*", "/metrics", "/metrics-http"],
 ).instrument(app)
 
 
 @app.on_event("startup")
 async def _startup():
     # set ENABLE_METRICS to True to enable metrics
-    instrumentator.expose(app)
+    instrumentator.expose(app, endpoint="/metrics-http")
 
 
 def parse_args():
@@ -117,8 +118,8 @@ def parse_args():
                         type=str,
                         default=None,
                         help="The model name used in the API. If not "
-                        "specified, the model name will be the same as "
-                        "the huggingface name.")
+                             "specified, the model name will be the same as "
+                             "the huggingface name.")
     parser.add_argument(
         "--lora-modules",
         type=str,
@@ -132,13 +133,13 @@ def parse_args():
                         type=str,
                         default=None,
                         help="The file path to the chat template, "
-                        "or the template in single-line form "
-                        "for the specified model")
+                             "or the template in single-line form "
+                             "for the specified model")
     parser.add_argument("--response-role",
                         type=str,
                         default="assistant",
                         help="The role name to return if "
-                        "`request.add_generation_prompt=true`.")
+                             "`request.add_generation_prompt=true`.")
     parser.add_argument("--ssl-keyfile",
                         type=str,
                         default=None,
@@ -158,10 +159,10 @@ def parse_args():
         action="append",
         default=[],
         help="Additional ASGI middleware to apply to the app. "
-        "We accept multiple --middleware arguments. "
-        "The value should be an import path. "
-        "If a function is provided, vLLM will add it to the server using @app.middleware('http'). "
-        "If a class is provided, vLLM will add it to the server using app.add_middleware(). "
+             "We accept multiple --middleware arguments. "
+             "The value should be an import path. "
+             "If a function is provided, vLLM will add it to the server using @app.middleware('http'). "
+             "If a class is provided, vLLM will add it to the server using app.add_middleware(). "
     )
 
     parser = AsyncEngineArgs.add_cli_args(parser)
@@ -202,6 +203,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
     else:
+        body_logger(request, raw_request, time.time(), generator.model_dump())
         return JSONResponse(content=generator.model_dump())
 
 
