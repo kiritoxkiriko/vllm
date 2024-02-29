@@ -2,10 +2,16 @@ ARG VERSION=v0.3.2
 
 FROM vllm/vllm-openai:${VERSION}
 
-ENV PIP_INDEX_URL=https://mirrors.sustech.edu.cn/pypi/web/simple
+ENV PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple
 
 RUN pip install --no-cache-dir prometheus_fastapi_instrumentator
 
 COPY ./vllm/entrypoints/openai/api_server.py /workspace/vllm/entrypoints/openai/api_server.py
 
 ENV ENABLE_METRICS=1
+
+# add more dependencies
+
+#RUN apt-get update && apt-get install -y git && apt-get clean
+
+#RUN pip install --no-cache-dir --no-build-isolation tiktoken flash-attn
