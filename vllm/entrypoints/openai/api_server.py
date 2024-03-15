@@ -189,10 +189,94 @@ async def show_available_models():
     models = await openai_serving_chat.show_available_models()
     return JSONResponse(content=models.model_dump())
 
+########################## NIO hot fix ##########################
+import numpy as np
+import json
+from vllm.entrypoints.openai.faiss_ip_index import FaissSentenceIndexer, knowledge_tagging
+from tqdm.auto import tqdm
+import requests
+embedding_api_url = "http://172.26.181.124:8089"
+reranker_api_url = "http://172.26.181.66:8089"
+proxies = {
+    'http': 'socks5://10.161.35.14:32101',
+    'https': 'socks5://10.161.35.14:32101'
+}
+def embedding_get(sentences, api_url=embedding_api_url,proxies=proxies,batch_size=16):
+    # auto batching
+    for i in tqdm(range(0, len(sentences), batch_size)):
+        response = requests.post(api_url + '/predictions/SBERT', data={'data': json.dumps({'queries': sentences[i:i+batch_size]})},proxies=proxies)
+        if response.status_code == 200:
+            vectors = response.json()
+        else:
+            return response.text
+        if i == 0:
+            all_vectors = vectors
+        else:
+            all_vectors.extend(vectors)
+    return all_vectors
+
+def reranking_reverse_get(query, candidates, api_url=reranker_api_url,proxies=proxies,batch_size=8):
+    pairs = [[query, i] for i in candidates]
+    # auto batching
+    for i in tqdm(range(0, len(pairs), batch_size)):
+        response = requests.post(api_url + '/predictions/SBERT', data={'data': json.dumps({'queries': pairs[i:i+batch_size]})},proxies=proxies)
+        if response.status_code == 200:
+            vectors = response.json()
+        else:
+            return response.text
+        if i == 0:
+            all_vectors = vectors
+        else:
+            all_vectors.extend(vectors)
+    if isinstance(all_vectors, list):
+        return sorted(zip(candidates, all_vectors), key=lambda x: x[1], reverse=True)
+
+def retrival(query,sentence_indexer, embedding_api_url=embedding_api_url, reranker_api_url=reranker_api_url, proxies=proxies, topk=10, rerank=True, using_internal_keyword_system=False):
+    query_embedding = embedding_get([query], embedding_api_url, proxies)
+    query_embedding = np.array(query_embedding).astype('float32')
+    result = sentence_indexer.search(query_embedding, k=topk)
+    # 获取句子原句
+    candidates = result[2][0]
+    if rerank:
+        result = reranking_reverse_get(query, candidates, reranker_api_url ,proxies)
+        return [i[0] for i in result]
+    else:
+        return candidates
+
+def build_faiss_indexer(_sentences, embedding_api_url=embedding_api_url, proxies=proxies, dim=1024):
+    _embeddings = np.array(embedding_get(_sentences, embedding_api_url, proxies)).astype('float32')
+    # _keyword_set_list = [knowledge_tagging(i) for i in _sentences]
+    _keyword_set_list = []
+    sentence_indexer = FaissSentenceIndexer(_embeddings, _sentences, _keyword_set_list, d=dim,silence=True)
+    return sentence_indexer, _sentences, _embeddings
+
+
+def add_doc2_request(request):
+    for m in request.messages:
+        if m['role'] == 'user':
+            if '@@selected_knowledges@@' in m['content']:
+                user_query = m['content'].split('#用户提问：')[-1].strip()
+                selected_knowledges = retrival(user_query, sentence_indexer, embedding_api_url, reranker_api_url, proxies,topk=10, rerank=False, using_internal_keyword_system=False)
+                selected_knowledges = json.dumps(selected_knowledges, ensure_ascii=False,indent=4)
+                m['content'] = m['content'].replace('@@selected_knowledges@@',selected_knowledges)
+                break
+        else:
+            continue
+    return request
+
+##############################123#####################################
 
 @app.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
+    try:
+        request = add_doc2_request(request)
+        print(request.messages[-1])
+    except Exception as e:
+        print(e)
+        print(e)
+        print(e)
+
     generator = await openai_serving_chat.create_chat_completion(
         request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -269,6 +353,20 @@ if __name__ == "__main__":
                                             args.chat_template)
     openai_serving_completion = OpenAIServingCompletion(
         engine, served_model, args.lora_modules)
+
+    ######################### NIO hot fix #########################
+    try:
+        with open('/ur-hl/wenrui.zhou/baas_sentences.json', 'r') as f:
+            sentences = json.load(f)
+            sentence_indexer, _sentences, _embeddings = build_faiss_indexer(sentences, dim=768)
+    except Exception as e:
+        print(e)
+        print(e)
+        print(e)
+
+
+
+    ######################### NIO hot fix #########################
 
     app.root_path = args.root_path
     uvicorn.run(app,
