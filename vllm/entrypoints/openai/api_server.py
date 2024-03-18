@@ -82,7 +82,7 @@ instrumentator = Instrumentator(
 @app.on_event("startup")
 async def _startup():
     # set ENABLE_METRICS to True to enable metrics
-    instrumentator.expose(app, endpoint="/metrics-http")
+    instrumentator.expose(app, endpoint="/metrics")
 
 
 def parse_args():
@@ -169,7 +169,7 @@ def parse_args():
 
 # Add prometheus asgi middleware to route /metrics requests
 metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+app.mount("/metrics-vllm", metrics_app)
 
 
 @app.exception_handler(RequestValidationError)
