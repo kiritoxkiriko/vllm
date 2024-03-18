@@ -14,4 +14,5 @@ ENV ENABLE_METRICS=1
 
 RUN apt-get update && apt-get install -y git && apt-get clean
 
-RUN pip install --no-cache-dir --no-build-isolation tiktoken flash-attn
+# remove flash-attn for now
+RUN pip install --no-cache-dir --no-build-isolation tiktoken
