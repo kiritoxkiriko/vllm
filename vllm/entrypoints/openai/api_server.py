@@ -74,15 +74,11 @@ from prometheus_fastapi_instrumentator import Instrumentator
 instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
-    should_respect_env_var=True,
+    #should_respect_env_var=True,
     excluded_handlers=[".*admin.*", "/metrics", "/metrics-http"],
 ).instrument(app)
 
-
-@app.on_event("startup")
-async def _startup():
-    # set ENABLE_METRICS to True to enable metrics
-    instrumentator.expose(app, endpoint="/metrics")
+instrumentator.expose(app, endpoint="/metrics")
 
 
 def parse_args():
