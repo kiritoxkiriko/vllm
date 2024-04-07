@@ -33,7 +33,6 @@ logger = init_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-
     async def _force_log():
         while True:
             await asyncio.sleep(10)
@@ -50,6 +49,7 @@ app = fastapi.FastAPI(lifespan=lifespan)
 # body logger
 import time
 
+
 def body_logger(request, raw_request: Request, start_time: float, resp=None):
     request_body = request.model_dump_json()
     process_time = time.time() - start_time
@@ -64,7 +64,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
-    #should_respect_env_var=True,
+    # should_respect_env_var=True,
     excluded_handlers=[".*admin.*", "/metrics", "/metrics-http"],
 ).instrument(app)
 
@@ -116,10 +116,11 @@ async def create_chat_completion(request: ChatCompletionRequest,
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
     if request.stream:
+        body_logger(request, raw_request, start_t, generator)
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
     else:
-        body_logger(request, raw_request, start_t, generator.model_dump())
+        body_logger(request, raw_request, start_t, generator)
         return JSONResponse(content=generator.model_dump())
 
 

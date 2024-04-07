@@ -1,4 +1,4 @@
-ARG VERSION=v0.3.3
+ARG VERSION=v0.4.0.post1
 
 FROM vllm/vllm-openai:${VERSION}
 
@@ -15,4 +15,5 @@ ENV ENABLE_METRICS=1
 RUN apt-get update && apt-get install -y git && apt-get clean
 
 # remove flash-attn for now
-RUN pip install --no-cache-dir --no-build-isolation tiktoken
+# now tiktoken is a dependency of vllm, so we can remove it
+#RUN pip install --no-cache-dir --no-build-isolation tiktoken
