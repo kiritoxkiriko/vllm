@@ -77,6 +77,7 @@ def parse_args():
 
 
 # Add prometheus asgi middleware to route /metrics requests
+# change the route to /metrics-vllm, so that it won't conflict with the default /metrics route
 metrics_app = make_asgi_app()
 app.mount("/metrics-vllm", metrics_app)
 
