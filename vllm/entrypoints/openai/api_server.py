@@ -65,7 +65,7 @@ instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
     # should_respect_env_var=True,
-    excluded_handlers=[".*admin.*", "/metrics", "/metrics-http"],
+    excluded_handlers=[".*admin.*", "/metrics", "/metrics-vllm"],
 ).instrument(app)
 
 instrumentator.expose(app, endpoint="/metrics")
