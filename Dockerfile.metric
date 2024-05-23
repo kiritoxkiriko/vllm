@@ -6,7 +6,9 @@ FROM vllm/vllm-openai:${VERSION}
 
 RUN pip install --no-cache-dir prometheus_fastapi_instrumentator
 
-COPY ./vllm/entrypoints/openai/api_server.py /workspace/vllm/entrypoints/openai/api_server.py
+COPY ./vllm/entrypoints/openai/api_server.py /tmp/api_server.py
+
+RUN mv /tmp/api_server.py $(pip show vllm | grep Location | awk '{print $2}')/vllm/entrypoints/openai/api_server.py
 
 ENV ENABLE_METRICS=1
 
