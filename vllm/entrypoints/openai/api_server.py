@@ -89,7 +89,7 @@ def parse_args():
 route = Mount("/metrics-vllm", make_asgi_app())
 # # Workaround for 307 Redirect for /metrics
 # route.path_regex = re.compile('^/metrics(?P<path>.*)$')
-# app.routes.append(route)
+app.routes.append(route)
 
 
 @app.exception_handler(RequestValidationError)
