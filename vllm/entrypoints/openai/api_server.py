@@ -39,7 +39,6 @@ _running_tasks: Set[asyncio.Task[Any]] = set()
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-
     async def _force_log():
         while True:
             await asyncio.sleep(10)
@@ -86,9 +85,10 @@ def parse_args():
 
 
 # Add prometheus asgi middleware to route /metrics requests
-route = Mount("/metrics-vllm", make_asgi_app())
+vllm_metrics_path = "/metrics-vllm"
+route = Mount(vllm_metrics_path, make_asgi_app())
 # # Workaround for 307 Redirect for /metrics
-# route.path_regex = re.compile('^/metrics(?P<path>.*)$')
+route.path_regex = re.compile('^' + vllm_metrics_path + '(?P<path>.*)$')
 app.routes.append(route)
 
 
