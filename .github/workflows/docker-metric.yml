@@ -6,6 +6,7 @@ on:
       #- "v*.*.*"
       # match "v1.2.3-metric"
       - "v*.*.*-metric"
+      - "v*.*.*.*-metric"
 
 
 jobs:
