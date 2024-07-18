@@ -7,7 +7,7 @@ import torch
 from torch.nn.functional import scaled_dot_product_attention
 
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
-                                              AttentionMetadata)
+                                              AttentionMetadata, AttentionType)
 from vllm.attention.ops.paged_attn import PagedAttentionMetadata
 from vllm.utils import is_cpu
 
@@ -31,8 +31,8 @@ class TorchSDPABackend(AttentionBackend):
         return TorchSDPABackendImpl
 
     @staticmethod
-    def make_metadata(*args, **kwargs) -> "TorchSDPAMetadata":
-        return TorchSDPAMetadata(*args, **kwargs)
+    def get_metadata_cls() -> Type["AttentionMetadata"]:
+        return TorchSDPAMetadata
 
     @staticmethod
     def get_kv_cache_shape(
@@ -145,6 +145,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         kv_cache: Optional[torch.Tensor],
         attn_metadata: TorchSDPAMetadata,  # type: ignore
         kv_scale: float = 1.0,
+        attn_type: AttentionType = AttentionType.DECODER,
     ) -> torch.Tensor:
         """Forward pass with torch SDPA and PagedAttention.
 
@@ -158,6 +159,11 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
             shape = [num_tokens, num_heads * head_size]
         """
         assert kv_scale == 1.0
+        if attn_type != AttentionType.DECODER:
+            raise NotImplementedError("Encoder self-attention and "
+                                      "encoder/decoder cross-attention "
+                                      "are not implemented for "
+                                      "TorchSDPABackendImpl")
         num_tokens, hidden_size = query.shape
         # Reshape the query, key, and value tensors.
         query = query.view(-1, self.num_heads, self.head_size)
@@ -245,7 +251,7 @@ def _make_alibi_bias(
     dtype: torch.dtype,
     seq_lens: List[int],
 ) -> List[torch.Tensor]:
-    attn_biases = []
+    attn_biases: List[torch.Tensor] = []
     for seq_len in seq_lens:
         bias = torch.arange(seq_len, dtype=dtype)
         # NOTE(zhuohan): HF uses
@@ -271,7 +277,7 @@ def _make_sliding_window_bias(
     window_size: Optional[int],
     dtype: torch.dtype,
 ) -> List[torch.Tensor]:
-    attn_biases = []
+    attn_biases: List[torch.Tensor] = []
     for seq_len in seq_lens:
         tensor = torch.full(
             (1, seq_len, seq_len),

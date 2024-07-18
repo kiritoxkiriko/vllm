@@ -329,7 +329,7 @@ def np_cache_weights_iterator(
     # dumping the same model weights to numpy at the same time.
     with get_lock(model_name_or_path, cache_dir):
         if not os.path.exists(weight_names_file):
-            weight_names = []
+            weight_names: List[str] = []
             for bin_file in hf_weights_files:
                 state = torch.load(bin_file, map_location="cpu")
                 for name, param in state.items():
@@ -431,6 +431,11 @@ def convert_pyslice_to_tensor(x: Any) -> torch.Tensor:
 def default_weight_loader(param: torch.Tensor,
                           loaded_weight: torch.Tensor) -> None:
     """Default weight loader."""
+    # If the weight on disk does not have a shape, give it one
+    # (such scales for AutoFp8).
+    if len(loaded_weight.shape) == 0:
+        loaded_weight = loaded_weight.reshape(1)
+
     assert param.size() == loaded_weight.size()
     param.data.copy_(loaded_weight)
 

@@ -21,8 +21,11 @@ _GENERATION_MODELS = {
     "DbrxForCausalLM": ("dbrx", "DbrxForCausalLM"),
     "DeciLMForCausalLM": ("decilm", "DeciLMForCausalLM"),
     "DeepseekForCausalLM": ("deepseek", "DeepseekForCausalLM"),
+    "DeepseekV2ForCausalLM": ("deepseek_v2", "DeepseekV2ForCausalLM"),
     "FalconForCausalLM": ("falcon", "FalconForCausalLM"),
+    "FuyuForCausalLM": ("fuyu", "FuyuForCausalLM"),
     "GemmaForCausalLM": ("gemma", "GemmaForCausalLM"),
+    "Gemma2ForCausalLM": ("gemma2", "Gemma2ForCausalLM"),
     "GPT2LMHeadModel": ("gpt2", "GPT2LMHeadModel"),
     "GPTBigCodeForCausalLM": ("gpt_bigcode", "GPTBigCodeForCausalLM"),
     "GPTJForCausalLM": ("gpt_j", "GPTJForCausalLM"),
@@ -47,8 +50,12 @@ _GENERATION_MODELS = {
     "OlmoForCausalLM": ("olmo", "OlmoForCausalLM"),
     "OPTForCausalLM": ("opt", "OPTForCausalLM"),
     "OrionForCausalLM": ("orion", "OrionForCausalLM"),
+    "PersimmonForCausalLM": ("persimmon", "PersimmonForCausalLM"),
+    "PaliGemmaForConditionalGeneration":
+    ("paligemma", "PaliGemmaForConditionalGeneration"),
     "PhiForCausalLM": ("phi", "PhiForCausalLM"),
     "Phi3ForCausalLM": ("llama", "LlamaForCausalLM"),
+    "Phi3VForCausalLM": ("phi3v", "Phi3VForCausalLM"),
     "QWenLMHeadModel": ("qwen", "QWenLMHeadModel"),
     "Qwen2ForCausalLM": ("qwen2", "Qwen2ForCausalLM"),
     "Qwen2MoeForCausalLM": ("qwen2_moe", "Qwen2MoeForCausalLM"),
@@ -59,6 +66,9 @@ _GENERATION_MODELS = {
     "ArcticForCausalLM": ("arctic", "ArcticForCausalLM"),
     "XverseForCausalLM": ("xverse", "XverseForCausalLM"),
     "Phi3SmallForCausalLM": ("phi3_small", "Phi3SmallForCausalLM"),
+    "MedusaModel": ("medusa", "Medusa"),
+    "MLPSpeculatorPreTrainedModel": ("mlp_speculator", "MLPSpeculator"),
+    "JambaForCausalLM": ("jamba", "JambaForCausalLM")
 }
 
 _EMBEDDING_MODELS = {
@@ -72,11 +82,11 @@ _MODELS = {**_GENERATION_MODELS, **_EMBEDDING_MODELS}
 _OOT_MODELS: Dict[str, Type[nn.Module]] = {}
 
 # Models not supported by ROCm.
-_ROCM_UNSUPPORTED_MODELS = []
+_ROCM_UNSUPPORTED_MODELS: List[str] = []
 
 # Models partially supported by ROCm.
 # Architecture -> Reason.
-_ROCM_PARTIALLY_SUPPORTED_MODELS = {
+_ROCM_PARTIALLY_SUPPORTED_MODELS: Dict[str, str] = {
     "Qwen2ForCausalLM":
     "Sliding window attention is not yet supported in ROCm's flash attention",
     "MistralForCausalLM":
