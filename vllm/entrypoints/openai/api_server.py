@@ -71,7 +71,6 @@ def model_is_embedding(model_name: str, trust_remote_code: bool) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     async def _force_log():
         while True:
             await asyncio.sleep(10)
@@ -139,6 +138,10 @@ import time
 
 def body_logger(request, raw_request: Request, start_time: float, resp=None):
     request_body = request.model_dump_json()
+    if resp is None:
+        resp = {}
+    else:
+        resp = resp.model_dump()
     process_time = time.time() - start_time
     request_id = raw_request.headers.get('X-NADP-RequestID')
     logger.info(
@@ -157,12 +160,13 @@ instrumentator = Instrumentator(
 
 instrumentator.expose(router, endpoint="/metrics")
 
+
 def mount_metrics(app: FastAPI):
     vllm_metrics_path = "/metrics-vllm"
     # Add prometheus asgi middleware to route /metrics requests
     metrics_route = Mount(vllm_metrics_path, make_asgi_app())
     # Workaround for 307 Redirect for /metrics
-    metrics_route.path_regex = re.compile('^'+vllm_metrics_path+'(?P<path>.*)$')
+    metrics_route.path_regex = re.compile('^' + vllm_metrics_path + '(?P<path>.*)$')
     app.routes.append(metrics_route)
 
 
@@ -301,8 +305,8 @@ def build_app(args: Namespace) -> FastAPI:
 
 
 async def init_app(
-    async_engine_client: AsyncEngineClient,
-    args: Namespace,
+        async_engine_client: AsyncEngineClient,
+        args: Namespace,
 ) -> FastAPI:
     app = build_app(args)
 
