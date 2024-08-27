@@ -211,14 +211,12 @@ def body_logger(request, raw_request: Request, start_time: float, resp=None):
 ## add metrics
 from prometheus_fastapi_instrumentator import Instrumentator
 
-instrumentator = Instrumentator(
+prom_instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
     # should_respect_env_var=True,
     excluded_handlers=[".*admin.*", "/metrics", "/metrics-vllm"],
-).instrument(router)
-
-instrumentator.expose(router, endpoint="/metrics")
+)
 
 
 def mount_metrics(app: FastAPI):
@@ -245,6 +243,8 @@ def mount_metrics(app: FastAPI):
     # Workaround for 307 Redirect for /metrics
     metrics_route.path_regex = re.compile('^/metrics-vllm(?P<path>.*)$')
     app.routes.append(metrics_route)
+    # mount my metrics
+    prom_instrumentator.instrument(app).expose(app)
 
 
 @router.get("/health")
@@ -359,6 +359,7 @@ def build_app(args: Namespace) -> FastAPI:
     app.root_path = args.root_path
 
     mount_metrics(app)
+
 
     app.add_middleware(
         CORSMiddleware,
