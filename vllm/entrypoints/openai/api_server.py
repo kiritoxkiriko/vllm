@@ -259,8 +259,6 @@ def mount_metrics(app: FastAPI):
     # Workaround for 307 Redirect for /metrics
     metrics_route.path_regex = re.compile("^/metrics-vllm(?P<path>.*)$")
     app.routes.append(metrics_route)
-    # mount my metrics
-    prom_instrumentator.instrument(app).expose(app)
 
 
 @router.get("/health")
@@ -426,6 +424,9 @@ async def init_app(
     args: Namespace,
 ) -> FastAPI:
     app = build_app(args)
+
+    # mount my metrics
+    prom_instrumentator.instrument(app).expose(app, endpoint="/metrics")
 
     if args.served_model_name is not None:
         served_model_names = args.served_model_name
