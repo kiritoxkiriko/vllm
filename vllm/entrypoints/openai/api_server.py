@@ -223,17 +223,19 @@ def body_logger(request, raw_request: Request, start_time: float, resp=None):
     logger.info(
         f'receive request: id: {request_id}, body: {request_body}, resp: {resp}, time: {process_time}')
 
+def mount_my_metrics(app: FastAPI):
+    ## add metrics
+    logger.info("Mounting my metrics")
+    from prometheus_fastapi_instrumentator import Instrumentator
 
-## add metrics
-from prometheus_fastapi_instrumentator import Instrumentator
-
-prom_instrumentator = Instrumentator(
-    should_group_status_codes=False,
-    should_ignore_untemplated=True,
-    # should_respect_env_var=True,
-    excluded_handlers=[".*admin.*", "/metrics", "/metrics-vllm"],
-)
-
+    prom_instrumentator = Instrumentator(
+        should_group_status_codes=False,
+        should_ignore_untemplated=True,
+        # should_respect_env_var=True,
+        excluded_handlers=[".*admin.*", "/metrics", "/metrics-vllm"],
+    )
+    instrumentator = prom_instrumentator.instrument(app)
+    instrumentator.expose(app, endpoint="/metrics")
 
 def mount_metrics(app: FastAPI):
     # Lazy import for prometheus multiprocessing.
@@ -376,6 +378,7 @@ def build_app(args: Namespace) -> FastAPI:
     app.root_path = args.root_path
 
     mount_metrics(app)
+    mount_my_metrics(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -424,9 +427,6 @@ async def init_app(
     args: Namespace,
 ) -> FastAPI:
     app = build_app(args)
-
-    # mount my metrics
-    prom_instrumentator.instrument(app).expose(app, endpoint="/metrics")
 
     if args.served_model_name is not None:
         served_model_names = args.served_model_name
