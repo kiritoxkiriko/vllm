@@ -53,7 +53,7 @@ from vllm.worker.model_runner_base import (
     _add_attn_metadata_broadcastable_dict,
     _add_sampling_metadata_broadcastable_dict,
     _init_attn_metadata_from_tensor_dict,
-    _init_sampling_metadata_from_tensor_dict)
+    _init_sampling_metadata_from_tensor_dict, dump_input_when_exception)
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -1064,10 +1064,12 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     "This may lead to less accurate results!")
 
         if envs.VLLM_TEST_DYNAMO_GRAPH_CAPTURE and supports_dynamo():
+            from vllm.plugins import get_torch_compile_backend
+            backend = get_torch_compile_backend() or "eager"
             self.model = torch.compile(
                 self.model,
                 fullgraph=envs.VLLM_TEST_DYNAMO_FULLGRAPH_CAPTURE,
-                backend="eager")
+                backend=backend)
 
     def save_sharded_state(
         self,
@@ -1489,6 +1491,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                    virtual_engine=virtual_engine)
 
     @torch.inference_mode()
+    @dump_input_when_exception(exclude_args=[0], exclude_kwargs=["self"])
     def execute_model(
         self,
         model_input: ModelInputForGPUWithSamplingMetadata,
