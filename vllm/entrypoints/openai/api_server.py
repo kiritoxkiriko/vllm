@@ -221,8 +221,11 @@ router = APIRouter()
 # body logger
 import time
 
+ENABLE_LOG_REQUESTS = os.environ.get('ENABLE_LOG_REQUESTS', '0') == '1'
 
 def body_logger(request, raw_request: Request, start_time: float, resp=None):
+    if not ENABLE_LOG_REQUESTS:
+        return
     request_body = request.model_dump_json()
     if resp is not None and hasattr(resp, 'model_dump_json'):
         resp = resp.model_dump_json()

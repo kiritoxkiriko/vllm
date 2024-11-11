@@ -12,6 +12,8 @@ RUN mv /tmp/api_server.py $(pip show vllm | grep Location | awk '{print $2}')/vl
 
 ENV ENABLE_METRICS=1
 
+ENV ENABLE_LOG_REQUESTS=1
+
 # add more dependencies
 
 RUN apt-get update && apt-get install -y git && apt-get clean
