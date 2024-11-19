@@ -1,4 +1,4 @@
-ARG VERSION=v0.6.3.post1
+ARG VERSION=v0.6.4.post1
 
 FROM vllm/vllm-openai:${VERSION}
 
@@ -17,6 +17,8 @@ ENV ENABLE_LOG_REQUESTS=1
 # add more dependencies
 
 RUN apt-get update && apt-get install -y git && apt-get clean
+
+#RUN pip install --no-cache-dir qwen-vl-utils
 
 # remove flash-attn for now
 # now tiktoken is a dependency of vllm, so we can remove it
