@@ -1,4 +1,4 @@
-ARG VERSION=v0.6.4.post1
+ARG VERSION=v0.6.5
 
 FROM vllm/vllm-openai:${VERSION}
 
