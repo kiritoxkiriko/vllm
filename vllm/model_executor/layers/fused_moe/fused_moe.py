@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Fused MoE kernel."""
 import functools
 import json
@@ -404,6 +405,144 @@ def fused_moe_kernel(
     tl.store(c_ptrs, accumulator, mask=c_mask)
 
 
+def ceil_div(a, b):
+    return (a + b - 1) // b
+
+
+@triton.jit
+def moe_align_block_size_stage1(
+    topk_ids_ptr,
+    tokens_cnts_ptr,
+    num_experts: tl.constexpr,
+    numel: tl.constexpr,
+    tokens_per_thread: tl.constexpr,
+):
+    pid = tl.program_id(0)
+
+    start_idx = pid * tokens_per_thread
+
+    off_c = (pid + 1) * num_experts
+
+    for i in range(tokens_per_thread):
+        if start_idx + i < numel:
+            idx = tl.load(topk_ids_ptr + start_idx + i)
+            token_cnt = tl.load(tokens_cnts_ptr + off_c + idx)
+            tl.store(tokens_cnts_ptr + off_c + idx, token_cnt + 1)
+
+
+@triton.jit
+def moe_align_block_size_stage2(
+    tokens_cnts_ptr,
+    num_experts: tl.constexpr,
+):
+    pid = tl.program_id(0)
+
+    last_cnt = 0
+    for i in range(1, num_experts + 1):
+        token_cnt = tl.load(tokens_cnts_ptr + i * num_experts + pid)
+        last_cnt = last_cnt + token_cnt
+        tl.store(tokens_cnts_ptr + i * num_experts + pid, last_cnt)
+
+
+@triton.jit
+def moe_align_block_size_stage3(
+    total_tokens_post_pad_ptr,
+    tokens_cnts_ptr,
+    cumsum_ptr,
+    num_experts: tl.constexpr,
+    block_size: tl.constexpr,
+):
+    last_cumsum = 0
+    off_cnt = num_experts * num_experts
+    for i in range(1, num_experts + 1):
+        token_cnt = tl.load(tokens_cnts_ptr + off_cnt + i - 1)
+        last_cumsum = last_cumsum + tl.cdiv(token_cnt, block_size) * block_size
+        tl.store(cumsum_ptr + i, last_cumsum)
+    tl.store(total_tokens_post_pad_ptr, last_cumsum)
+
+
+@triton.jit
+def moe_align_block_size_stage4(
+    topk_ids_ptr,
+    sorted_token_ids_ptr,
+    expert_ids_ptr,
+    tokens_cnts_ptr,
+    cumsum_ptr,
+    num_experts: tl.constexpr,
+    block_size: tl.constexpr,
+    numel: tl.constexpr,
+    tokens_per_thread: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    start_idx = tl.load(cumsum_ptr + pid)
+    end_idx = tl.load(cumsum_ptr + pid + 1)
+
+    for i in range(start_idx, end_idx, block_size):
+        tl.store(expert_ids_ptr + i // block_size, pid)
+
+    start_idx = pid * tokens_per_thread
+    off_t = pid * num_experts
+
+    for i in range(start_idx, tl.minimum(start_idx + tokens_per_thread,
+                                         numel)):
+        expert_id = tl.load(topk_ids_ptr + i)
+        token_cnt = tl.load(tokens_cnts_ptr + off_t + expert_id)
+        rank_post_pad = token_cnt + tl.load(cumsum_ptr + expert_id)
+        tl.store(sorted_token_ids_ptr + rank_post_pad, i)
+        tl.store(tokens_cnts_ptr + off_t + expert_id, token_cnt + 1)
+
+
+# Triton implementation based on:
+# https://github.com/sgl-project/sglang/commit/ba5112ff691d791a9e38c6c71f59324a5fcb49d0
+def moe_align_block_size_triton(
+    topk_ids: torch.Tensor,
+    num_experts: int,
+    block_size: int,
+    sorted_token_ids: torch.Tensor,
+    expert_ids: torch.Tensor,
+    num_tokens_post_pad: torch.Tensor,
+) -> None:
+    numel = topk_ids.numel()
+    grid = (num_experts, )
+    tokens_cnts = torch.zeros((num_experts + 1, num_experts),
+                              dtype=torch.int32,
+                              device=topk_ids.device)
+    cumsum = torch.zeros((num_experts + 1, ),
+                         dtype=torch.int32,
+                         device=topk_ids.device)
+    tokens_per_thread = ceil_div(numel, num_experts)
+
+    moe_align_block_size_stage1[grid](
+        topk_ids,
+        tokens_cnts,
+        num_experts,
+        numel,
+        tokens_per_thread,
+    )
+    moe_align_block_size_stage2[grid](
+        tokens_cnts,
+        num_experts,
+    )
+    moe_align_block_size_stage3[(1, )](
+        num_tokens_post_pad,
+        tokens_cnts,
+        cumsum,
+        num_experts,
+        block_size,
+    )
+    moe_align_block_size_stage4[grid](
+        topk_ids,
+        sorted_token_ids,
+        expert_ids,
+        tokens_cnts,
+        cumsum,
+        num_experts,
+        block_size,
+        numel,
+        tokens_per_thread,
+    )
+
+
 def moe_align_block_size(
         topk_ids: torch.Tensor, block_size: int,
         num_experts: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -456,8 +595,29 @@ def moe_align_block_size(
     num_tokens_post_pad = torch.empty((1),
                                       dtype=torch.int32,
                                       device=topk_ids.device)
-    ops.moe_align_block_size(topk_ids, num_experts, block_size, sorted_ids,
-                             expert_ids, num_tokens_post_pad)
+    if num_experts >= 224:
+        if envs.VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON or num_experts != 256:
+            moe_align_block_size_triton(
+                topk_ids,
+                num_experts,
+                block_size,
+                sorted_ids,
+                expert_ids,
+                num_tokens_post_pad,
+            )
+        else:
+            # Currently requires num_experts=256
+            ops.sgl_moe_align_block_size(
+                topk_ids,
+                num_experts,
+                block_size,
+                sorted_ids,
+                expert_ids,
+                num_tokens_post_pad,
+            )
+    else:
+        ops.moe_align_block_size(topk_ids, num_experts, block_size, sorted_ids,
+                                 expert_ids, num_tokens_post_pad)
     return sorted_ids, expert_ids, num_tokens_post_pad
 
 
@@ -606,7 +766,7 @@ def get_config_file_name(E: int,
     device_name = current_platform.get_device_name().replace(" ", "_")
     dtype_selector = "" if not dtype else f",dtype={dtype}"
     block_shape_selector = ("" if not block_shape or not all(block_shape) else
-                            f",block_shape={block_shape}")
+                            f",block_shape={block_shape}").replace(" ", "")
     return f"E={E},N={N},device_name={device_name}{dtype_selector}{block_shape_selector}.json"  # noqa: E501
 
 
@@ -779,15 +939,17 @@ def grouped_topk(hidden_states: torch.Tensor,
     else:
         raise ValueError(f"Unsupported scoring function: {scoring_func}")
 
+    num_token = scores.shape[0]
     if e_score_correction_bias is not None:
         # Store original scores before applying correction bias. We use biased
         # scores for expert selection but original scores for routing weights
         original_scores = scores
         scores = scores + e_score_correction_bias.unsqueeze(0)
-
-    num_token = scores.shape[0]
-    group_scores = scores.view(num_token, num_expert_group,
-                               -1).max(dim=-1).values  # [n, n_group]
+        group_scores = (scores.view(num_token, num_expert_group,
+                                    -1).topk(2, dim=-1)[0].sum(dim=-1))
+    else:
+        group_scores = scores.view(num_token, num_expert_group,
+                                   -1).max(dim=-1).values  # [n, n_group]
     group_idx = torch.topk(group_scores, k=topk_group, dim=-1,
                            sorted=False)[1]  # [n, top_k_group]
     group_mask = torch.zeros_like(group_scores)  # [n, n_group]
@@ -795,7 +957,8 @@ def grouped_topk(hidden_states: torch.Tensor,
     score_mask = group_mask.unsqueeze(-1).expand(
         num_token, num_expert_group,
         scores.shape[-1] // num_expert_group).reshape(num_token, -1)  # [n, e]
-    tmp_scores = scores.masked_fill(~score_mask.bool(), 0.0)  # [n, e]
+    tmp_scores = scores.masked_fill(~score_mask.bool(),
+                                    float("-inf"))  # [n, e]
 
     if e_score_correction_bias is not None:
         topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)[1]
