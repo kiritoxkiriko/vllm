@@ -4,7 +4,7 @@ FROM vllm/vllm-openai:v${VERSION}
 
 #ENV PIP_INDEX_URL=https://mirrors.sustech.edu.cn/pypi/web/simple
 
-RUN pip install --no-cache-dir prometheus_fastapi_instrumentator vllm[audio]==${VERSION} pandas pyarrow
+RUN pip install --no-cache-dir prometheus_fastapi_instrumentator vllm[audio] pandas pyarrow qwen-vl-utils
 
 COPY ./vllm/entrypoints/openai/api_server.py /tmp/api_server.py
 
